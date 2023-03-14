@@ -8,7 +8,6 @@ type Header struct {
 	Error         string
 }
 
-
 type Codec interface {
 	io.Closer
 	ReadHeader(*Header) error
@@ -19,8 +18,15 @@ type Codec interface {
 type Type string
 
 // codec type
-const(
-	GobType Type ="application/gob"
+const (
+	GobType Type = "application/gob"
 )
 
-// type NewCodecFunc func(io)
+type NewCodecFunc func(io.ReadWriteCloser) Codec
+
+var NewCodecFuncMap map[Type]NewCodecFunc
+
+func init() {
+	NewCodecFuncMap = make(map[Type]NewCodecFunc)
+	NewCodecFuncMap[GobType] = NewGobCodec
+}
