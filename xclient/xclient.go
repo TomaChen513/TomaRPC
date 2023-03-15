@@ -2,7 +2,7 @@ package xclient
 
 import (
 	"context"
-	. "tomarpc"
+	. "rpc"
 	"io"
 	"reflect"
 	"sync"
@@ -32,6 +32,7 @@ func (xc *XClient) Close() error {
 	}
 	return nil
 }
+
 
 func (xc *XClient) dial(rpcAddr string) (*Client, error) {
 	xc.mu.Lock()

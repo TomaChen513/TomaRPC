@@ -1,8 +1,4 @@
-// Copyright 2009 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-package tomarpc
+package rpc
 
 import (
 	"bufio"
@@ -10,17 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"tomarpc/codec"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"rpc/codec"
 	"strings"
 	"sync"
 	"time"
 )
 
-// Call represents an active RPC.
 type Call struct {
 	Seq           uint64
 	ServiceMethod string      // format "<service>.<method>"
@@ -34,10 +29,6 @@ func (call *Call) done() {
 	call.Done <- call
 }
 
-// Client represents an RPC Client.
-// There may be multiple outstanding Calls associated
-// with a single Client, and a Client may be used by
-// multiple goroutines simultaneously.
 type Client struct {
 	cc       codec.Codec
 	opt      *Option
@@ -50,22 +41,21 @@ type Client struct {
 	shutdown bool // server has told us to stop
 }
 
+
 var _ io.Closer = (*Client)(nil)
 
-var ErrShutdown = errors.New("connection is shut down")
+var ErrShutDown = errors.New("connection is shut down")
 
-// Close the connection
 func (client *Client) Close() error {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	if client.closing {
-		return ErrShutdown
+		return ErrShutDown
 	}
 	client.closing = true
 	return client.cc.Close()
 }
 
-// IsAvailable return true if the client does work
 func (client *Client) IsAvailable() bool {
 	client.mu.Lock()
 	defer client.mu.Unlock()
@@ -76,7 +66,7 @@ func (client *Client) registerCall(call *Call) (uint64, error) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	if client.closing || client.shutdown {
-		return 0, ErrShutdown
+		return 0, ErrShutDown
 	}
 	call.Seq = client.seq
 	client.pending[call.Seq] = call
@@ -92,45 +82,17 @@ func (client *Client) removeCall(seq uint64) *Call {
 	return call
 }
 
+// Called when an error occurs on the server or client, set shutdown to true, and notify all pending calls of the error message.
 func (client *Client) terminateCalls(err error) {
 	client.sending.Lock()
 	defer client.sending.Unlock()
 	client.mu.Lock()
 	defer client.mu.Unlock()
+
 	client.shutdown = true
 	for _, call := range client.pending {
 		call.Error = err
 		call.done()
-	}
-}
-
-func (client *Client) send(call *Call) {
-	// make sure that the client will send a complete request
-	client.sending.Lock()
-	defer client.sending.Unlock()
-
-	// register this call.
-	seq, err := client.registerCall(call)
-	if err != nil {
-		call.Error = err
-		call.done()
-		return
-	}
-
-	// prepare request header
-	client.header.ServiceMethod = call.ServiceMethod
-	client.header.Seq = seq
-	client.header.Error = ""
-
-	// encode and send the request
-	if err := client.cc.Write(&client.header, call.Args); err != nil {
-		call := client.removeCall(seq)
-		// call may be nil, it usually means that Write partially failed,
-		// client has received the response and handled
-		if call != nil {
-			call.Error = err
-			call.done()
-		}
 	}
 }
 
@@ -144,8 +106,6 @@ func (client *Client) receive() {
 		call := client.removeCall(h.Seq)
 		switch {
 		case call == nil:
-			// it usually means that Write partially failed
-			// and call was already removed.
 			err = client.cc.ReadBody(nil)
 		case h.Error != "":
 			call.Error = fmt.Errorf(h.Error)
@@ -159,12 +119,96 @@ func (client *Client) receive() {
 			call.done()
 		}
 	}
-	// error occurs, so terminateCalls pending calls
 	client.terminateCalls(err)
 }
 
-// Go invokes the function asynchronously.
-// It returns the Call structure representing the invocation.
+func NewClient(conn net.Conn, opt *Option) (*Client, error) {
+	f := codec.NewCodecFuncMap[opt.CodecType]
+	if f == nil {
+		err := fmt.Errorf("invalid codec type %s", opt.CodecType)
+		log.Println("rpc client: codec error:", err)
+		return nil, err
+	}
+	// send options
+	if err := json.NewEncoder(conn).Encode(opt); err != nil {
+		log.Println("rpc client: options error: ", err)
+		_ = conn.Close()
+		return nil, err
+	}
+	return newClientCodec(f(conn), opt), nil
+}
+
+func newClientCodec(cc codec.Codec, opt *Option) *Client {
+	client := &Client{
+		seq:     1,
+		cc:      cc,
+		opt:     opt,
+		pending: make(map[uint64]*Call),
+	}
+	go client.receive()
+	return client
+}
+
+func parseOptions(opts ...*Option) (*Option, error) {
+	if len(opts) == 0 || opts[0] == nil {
+		return DefaultOption, nil
+	}
+
+	if len(opts) != 1 {
+		return nil, errors.New("number of options is more than 1")
+	}
+	opt := opts[0]
+	opt.MagicNumber = DefaultOption.MagicNumber
+	if opt.CodecType == "" {
+		opt.CodecType = DefaultOption.CodecType
+	}
+	return opt, nil
+}
+
+// func Dial(network, address string, opts ...*Option) (client *Client, err error) {
+// 	opt, err := parseOptions(opts...)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	conn, err := net.Dial(network, address)
+// 	defer func() {
+// 		if client == nil {
+// 			_ = conn.Close()
+// 		}
+// 	}()
+// 	return NewClient(conn, opt)
+// }
+// Dial connects to an RPC server at the specified network address
+func Dial(network, address string, opts ...*Option) (*Client, error) {
+	return dialTimeout(NewClient, network, address, opts...)
+}
+
+func (client *Client) send(call *Call) {
+	client.sending.Lock()
+	defer client.sending.Unlock()
+
+	seq, err := client.registerCall(call)
+	if err != nil {
+		call.Error = err
+		call.done()
+		return
+	}
+
+	client.header.ServiceMethod = call.ServiceMethod
+	client.header.Seq = seq
+	client.header.Error = ""
+
+	if err := client.cc.Write(&client.header, call.Args); err != nil {
+		call := client.removeCall(seq)
+		// call may be nil, it usually means that Write partially failed,
+		// client has received the response and handled
+		if call != nil {
+			call.Error = err
+			call.done()
+		}
+	}
+}
+
 func (client *Client) Go(serviceMethod string, args, reply interface{}, done chan *Call) *Call {
 	if done == nil {
 		done = make(chan *Call, 10)
@@ -181,6 +225,11 @@ func (client *Client) Go(serviceMethod string, args, reply interface{}, done cha
 	return call
 }
 
+// func (client *Client) Call(serviceMethod string, args, reply interface{}) error {
+// 	call := <-client.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done
+// 	return call.Error
+// }
+
 // Call invokes the named function, waits for it to complete,
 // and returns its error status.
 func (client *Client) Call(ctx context.Context, serviceMethod string, args, reply interface{}) error {
@@ -192,49 +241,6 @@ func (client *Client) Call(ctx context.Context, serviceMethod string, args, repl
 	case call := <-call.Done:
 		return call.Error
 	}
-}
-
-func parseOptions(opts ...*Option) (*Option, error) {
-	// if opts is nil or pass nil as parameter
-	if len(opts) == 0 || opts[0] == nil {
-		return DefaultOption, nil
-	}
-	if len(opts) != 1 {
-		return nil, errors.New("number of options is more than 1")
-	}
-	opt := opts[0]
-	opt.MagicNumber = DefaultOption.MagicNumber
-	if opt.CodecType == "" {
-		opt.CodecType = DefaultOption.CodecType
-	}
-	return opt, nil
-}
-
-func NewClient(conn net.Conn, opt *Option) (*Client, error) {
-	f := codec.NewCodecFuncMap[opt.CodecType]
-	if f == nil {
-		err := fmt.Errorf("invalid codec type %s", opt.CodecType)
-		log.Println("rpc client: codec error:", err)
-		return nil, err
-	}
-	// send options with server
-	if err := json.NewEncoder(conn).Encode(opt); err != nil {
-		log.Println("rpc client: options error: ", err)
-		_ = conn.Close()
-		return nil, err
-	}
-	return newClientCodec(f(conn), opt), nil
-}
-
-func newClientCodec(cc codec.Codec, opt *Option) *Client {
-	client := &Client{
-		seq:     1, // seq starts with 1, 0 means invalid call
-		cc:      cc,
-		opt:     opt,
-		pending: make(map[uint64]*Call),
-	}
-	go client.receive()
-	return client
 }
 
 type clientResult struct {
@@ -276,11 +282,6 @@ func dialTimeout(f newClientFunc, network, address string, opts ...*Option) (cli
 	}
 }
 
-// Dial connects to an RPC server at the specified network address
-func Dial(network, address string, opts ...*Option) (*Client, error) {
-	return dialTimeout(NewClient, network, address, opts...)
-}
-
 // NewHTTPClient new a Client instance via HTTP as transport protocol
 func NewHTTPClient(conn net.Conn, opt *Option) (*Client, error) {
 	_, _ = io.WriteString(conn, fmt.Sprintf("CONNECT %s HTTP/1.0\n\n", defaultRPCPath))
@@ -303,10 +304,6 @@ func DialHTTP(network, address string, opts ...*Option) (*Client, error) {
 	return dialTimeout(NewHTTPClient, network, address, opts...)
 }
 
-// XDial calls different functions to connect to a RPC server
-// according the first parameter rpcAddr.
-// rpcAddr is a general format (protocol@addr) to represent a rpc server
-// eg, http@10.0.0.1:7001, tcp@10.0.0.1:9999, unix@/tmp/geerpc.sock
 func XDial(rpcAddr string, opts ...*Option) (*Client, error) {
 	parts := strings.Split(rpcAddr, "@")
 	if len(parts) != 2 {

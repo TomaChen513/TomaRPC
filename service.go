@@ -1,4 +1,4 @@
-package tomarpc
+package rpc
 
 import (
 	"go/ast"
@@ -11,7 +11,7 @@ type methodType struct {
 	method    reflect.Method
 	ArgType   reflect.Type
 	ReplyType reflect.Type
-	numCalls  uint64
+	numCalls  uint64 //count call times
 }
 
 func (m *methodType) NumCalls() uint64 {
@@ -84,6 +84,10 @@ func (s *service) registerMethods() {
 	}
 }
 
+func isExportedOrBuiltinType(t reflect.Type) bool {
+	return ast.IsExported(t.Name()) || t.PkgPath() == ""
+}
+
 func (s *service) call(m *methodType, argv, replyv reflect.Value) error {
 	atomic.AddUint64(&m.numCalls, 1)
 	f := m.method.Func
@@ -92,8 +96,4 @@ func (s *service) call(m *methodType, argv, replyv reflect.Value) error {
 		return errInter.(error)
 	}
 	return nil
-}
-
-func isExportedOrBuiltinType(t reflect.Type) bool {
-	return ast.IsExported(t.Name()) || t.PkgPath() == ""
 }

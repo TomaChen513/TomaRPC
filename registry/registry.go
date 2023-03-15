@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// GeeRegistry is a simple register center, provide following functions.
 // add a server and receive heartbeat to keep it alive.
 // returns all alive servers and delete dead servers sync simultaneously.
 type GeeRegistry struct {

@@ -22,8 +22,6 @@ type Discovery interface {
 	GetAll() ([]string, error)
 }
 
-var _ Discovery = (*MultiServersDiscovery)(nil)
-
 // MultiServersDiscovery is a discovery for multi servers without a registry center
 // user provides the server addresses explicitly instead
 type MultiServersDiscovery struct {
@@ -32,6 +30,18 @@ type MultiServersDiscovery struct {
 	servers []string
 	index   int // record the selected position for robin algorithm
 }
+
+// NewMultiServerDiscovery creates a MultiServersDiscovery instance
+func NewMultiServerDiscovery(servers []string) *MultiServersDiscovery {
+	d := &MultiServersDiscovery{
+		servers: servers,
+		r:       rand.New(rand.NewSource(time.Now().UnixNano())),
+	}
+	d.index = d.r.Intn(math.MaxInt32 - 1)
+	return d
+}
+
+var _ Discovery = (*MultiServersDiscovery)(nil)
 
 // Refresh doesn't make sense for MultiServersDiscovery, so ignore it
 func (d *MultiServersDiscovery) Refresh() error {
@@ -74,14 +84,4 @@ func (d *MultiServersDiscovery) GetAll() ([]string, error) {
 	servers := make([]string, len(d.servers), len(d.servers))
 	copy(servers, d.servers)
 	return servers, nil
-}
-
-// NewMultiServerDiscovery creates a MultiServersDiscovery instance
-func NewMultiServerDiscovery(servers []string) *MultiServersDiscovery {
-	d := &MultiServersDiscovery{
-		servers: servers,
-		r:       rand.New(rand.NewSource(time.Now().UnixNano())),
-	}
-	d.index = d.r.Intn(math.MaxInt32 - 1)
-	return d
 }

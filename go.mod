@@ -1,3 +1,3 @@
-module tomarpc
+module rpc
 
 go 1.20
