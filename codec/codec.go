@@ -1,3 +1,5 @@
+// The codec defines the codec scheme in the RPC framework, and defines the internal form of the basic request header and the form of the body, only Gob is used, and it can be extended later if needed
+
 package codec
 
 import "io"

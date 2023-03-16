@@ -1,3 +1,5 @@
+// The client invariably uses JSON-encoded Option, and subsequent headers and body encoding are specified by CodeType in Option. The content in the Option header is decoded first, and then subsequent requests are decoded according to the decoding format in the header
+
 package rpc
 
 import (
