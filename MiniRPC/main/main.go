@@ -20,8 +20,11 @@ func main() {
 
 	time.Sleep(time.Second)
 
-	_ = json.NewEncoder(conn).Encode(minirpc.DefaultOption)
-	cc := codec.NewGobCodec(conn)
+	option := minirpc.Option{MagicNumber: 0x33333,CodecType: "application/json"}
+	_ = json.NewEncoder(conn).Encode(option)
+	// _ = json.NewEncoder(conn).Encode(minirpc.DefaultOption)
+
+	cc := codec.NewJsonCodec(conn)
 	// send request & receive response
 	for i := 0; i < 5; i++ {
 		h := &codec.Header{

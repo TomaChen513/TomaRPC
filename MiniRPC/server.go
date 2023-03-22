@@ -15,9 +15,13 @@ const MagicNumber = 0x33333
 
 type Option struct {
 	MagicNumber int
+	CodecType   codec.Type
 }
 
-var DefaultOption = &Option{MagicNumber: 0x33333}
+var DefaultOption = &Option{
+	MagicNumber: 0x33333,
+	CodecType:   codec.GobType,
+}
 
 type Server struct{}
 
@@ -55,7 +59,13 @@ func (server *Server) ServeConn(conn io.ReadWriteCloser) {
 		return
 	}
 
-	cc := codec.NewGobCodec(conn)
+	f := codec.CodecFuncMap[opt.CodecType]
+	if f == nil {
+		log.Printf("rpc server: invalid codec type %s", opt.CodecType)
+		return
+	}
+	cc := f(conn)
+
 	sending := new(sync.Mutex)
 	wg := new(sync.WaitGroup)
 	// handle header and body
