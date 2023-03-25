@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"rpc"
-	"rpc/registry"
-	"rpc/xclient"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"rpc"
+	"rpc/registry"
+	"rpc/xclient"
 	"sync"
 	"time"
 )
@@ -94,21 +95,57 @@ func broadcast(registry string) {
 	wg.Wait()
 }
 
+func test()int{
+	i:=0
+	defer func ()  {
+		fmt.Println("defer1")	
+	}()
+
+	defer func ()  {
+		i++
+		fmt.Println("defer2:")
+	}()
+
+	defer dFun(&i)
+
+	return i
+}
+
+func test1() (i int){
+	i=0
+	defer func ()  {
+		fmt.Println("defer1")	
+	}()
+
+	defer func ()  {
+		i++
+		fmt.Println("defer2:")
+	}()
+
+	defer dFun(&i)
+	return i
+}
+
+func dFun(i *int){
+	*i++
+	fmt.Println("defer3")
+}
 func main() {
-	log.SetFlags(0)
-	registryAddr := "http://localhost:9999/_rpc_/registry"
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go startRegistry(&wg)
-	wg.Wait()
+	fmt.Println(test())
+	// log.SetFlags(0)
+	// registryAddr := "http://localhost:9999/_rpc_/registry"
+	// var wg sync.WaitGroup
+	// wg.Add(1)
+	// go startRegistry(&wg)
+	// wg.Wait()
 
-	time.Sleep(time.Second)
-	wg.Add(2)
-	go startServer(registryAddr, &wg)
-	go startServer(registryAddr, &wg)
-	wg.Wait()
+	// time.Sleep(time.Second)
+	// wg.Add(2)
+	// go startServer(registryAddr, &wg)
+	// go startServer(registryAddr, &wg)
+	// wg.Wait()
 
-	time.Sleep(time.Second)
-	call(registryAddr)
-	broadcast(registryAddr)
+	// time.Sleep(time.Second)
+	// call(registryAddr)
+	// broadcast(registryAddr)
 }
