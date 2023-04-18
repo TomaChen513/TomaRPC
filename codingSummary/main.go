@@ -1,99 +1,96 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"time"
+
+	// "time"
+
+	"github.com/go-redis/redis/v8"
 )
 
 type Node struct {
-	id          int
-	color       int
+	val         int
 	left, right *Node
 }
 
+var Ctx = context.Background()
+
+var rdb1 *redis.Client
+var rdb2 *redis.Client
+
+
+
 func main() {
-	// a^b
-	var n int
-	fmt.Scan(&n)
-	nodes := make([]Node, n)
-	// init
-	for i := 0; i < n; i++ {
-		nodes[i] = Node{
-			id:    i + 1,
-			color: -1,
-			left:  nil,
-			right: nil,
-		}
-	}
+	rdb1 = redis.NewClient(&redis.Options{
+		Addr:     "121.5.231.228:6379",
+		Password: "tomaChen513?",
+		DB:       0, //  选择将点赞视频id信息存入 DB0.
+	})
+	
+	rdb2 = redis.NewClient(&redis.Options{
+		Addr:     "121.5.231.228:6379",
+		Password: "tomaChen513?",
+		DB:       1, //  选择将点赞视频id信息存入 DB0.
+	})
 
-	// build trees
-	for i := 0; i < n-1; i++ {
-		var parentIndex int
-		fmt.Scan(&parentIndex)
-		parentIndex -= 1
-		sonIndex := i + 1
-		// insert
-		if nodes[parentIndex].left == nil {
-			nodes[parentIndex].left = &nodes[sonIndex]
-		} else {
-			nodes[parentIndex].right = &nodes[sonIndex]
-		}
-	}
-	// get color
-	for i := 0; i < n; i++ {
-		var color int
-		fmt.Scan(&color)
-		nodes[i].color = color
-	}
-
-	var dfs func(node *Node) int
-	dfs = func(node *Node) int {
-		if node.left == nil && node.right == nil {
-			return 1
-		}
-		if node.color == 1 {
-			return dfs(node.left) + dfs(node.right)
-		} else {
-			return dfs(node.left) ^ dfs(node.right)
-		}
-	}
-	fmt.Println(dfs(&nodes[0]))
+	rdb1.Set(Ctx, "at_123", "1", 20*time.Second)
+	rdb2.Set(Ctx, "at_123", "rt_123", 40*time.Second)
+	ans:=rdb1.Get(Ctx,"at_123")
+	fmt.Println(ans)
+	fmt.Println("pass")
+	time.Sleep(1)
 }
 
-func xor(a, b int) int {
-	return a ^ b
-}
-func add(a, b int) int {
-	return a + b
+func request(at string){
+	valid:=rdb1.Get(Ctx,"at_123")
+	if valid==nil{
+		// search db2
+
+	}
+	
 }
 
-func convertToFloat1(s string) string {
-	// find .
-	sb := []byte(s)
-	pointIndex := -1
-	for i := len(sb) - 1; i >= 0; i-- {
-		if sb[i] == '.' {
-			pointIndex = i
-			break
-		}
+// func TestSetKey(t *testing.T) {
+// 	var Ctx = context.Background()
+
+// 	RdbLikeUserId = redis.NewClient(&redis.Options{
+// 		Addr:     "121.5.231.228:6379",
+// 		Password: "wintercamp",
+// 		DB:       0, //  选择将点赞视频id信息存入 DB0.
+// 	})
+
+// 	RdbLikeUserId.Set(Ctx,"toma","cxy1",20*time.Second)
+
+// }
+
+// 最近公共祖先
+func lowestAncestor(root, p, q *Node) *Node {
+	if root == nil || root == p || root == q {
+		return root
 	}
-	if pointIndex == -1 {
-		sb = append(sb, '.')
-		sb = append(sb, '0')
+	left := lowestAncestor(root.left, p, q)
+	right := lowestAncestor(root.right, p, q)
+
+	if left != nil && right != nil {
+		return root
+	} else if left == nil && right != nil {
+		return right
+	} else if left != nil && right == nil {
+		return left
 	} else {
-		if pointIndex < len(sb)-2 {
-			if sb[pointIndex+2] >= '5' {
-				sb[pointIndex+1] += 1
-			}
-		}
-		sb = sb[:pointIndex+2]
+		return nil
 	}
 
-	return string(sb)
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
+func lowestAncestor2(root, p, q *Node) *Node {
+	if root.val > p.val && root.val > q.val {
+		return lowestAncestor2(root.left, p, q)
+	} else if root.val < p.val && root.val < q.val {
+		return lowestAncestor2(root.right, p, q)
+	} else {
+		return root
 	}
-	return b
 }
